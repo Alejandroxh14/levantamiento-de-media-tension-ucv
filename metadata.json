@@ -1,0 +1,6 @@
+{
+  "name": "Levantamiento de Media Tensión UCV",
+  "description": "Aplicación móvil y de escritorio para la digitalización y captura en campo de levantamientos de media tensión (tanquillas y transformadores) con geolocalización GPS, exportación a Excel y sincronización con Google Sheets.",
+  "requestFramePermissions": ["geolocation", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
