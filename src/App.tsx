@@ -77,7 +77,7 @@ export default function App() {
     const config = getGoogleSheetsConfig();
     if (!config.webhookUrl) {
       setActiveTab('export');
-      showToast('Por favor configura la URL de Google Sheets primero.');
+      showToast('Por favor, configura la URL de Google Sheets primero.');
       return;
     }
 
