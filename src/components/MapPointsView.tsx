@@ -1,10 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LevantamientoRecord } from '../types';
+import { 
+  LevantamientoRecord, 
+  isTransformacionTipo, 
+  formatTipoDisplayName,
+  EstadoLevantamiento,
+  ESTADOS_LEVANTAMIENTO,
+  getRecordStatus
+} from '../types';
 import L from 'leaflet';
 import { 
   MapPin, 
   Layers, 
   Zap, 
+  Building2,
+  Radio,
   AlertTriangle,
   ExternalLink, 
   Eye, 
@@ -13,21 +22,28 @@ import {
   Compass,
   Filter,
   CheckCircle2,
-  Globe
+  Globe,
+  Pencil,
+  X,
+  Clock
 } from 'lucide-react';
 import { UCVLogo } from './UCVLogo';
 
 interface MapPointsViewProps {
   records: LevantamientoRecord[];
   onInspectRecord: (record: LevantamientoRecord) => void;
+  onEditRecord: (record: LevantamientoRecord) => void;
+  onUpdateStatus?: (recordId: string, newStatus: EstadoLevantamiento) => void;
 }
 
-type FilterType = 'all' | 'tanquillas' | 'transformadores' | 'sin_acceso';
+type FilterType = 'all' | 'tanquillas' | 'sotanos' | 'casillas' | 'postes' | 'sin_acceso' | 'inspeccionadas' | 'por_inspeccionar';
 type MapLayerType = 'streets' | 'satellite';
 
 export const MapPointsView: React.FC<MapPointsViewProps> = ({
   records,
   onInspectRecord,
+  onEditRecord,
+  onUpdateStatus,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -43,20 +59,27 @@ export const MapPointsView: React.FC<MapPointsViewProps> = ({
     (r) => r.latitud !== null && r.longitud !== null && !isNaN(r.latitud) && !isNaN(r.longitud)
   );
 
-  // Categorize
-  const tanquillasConAcceso = recordsWithCoords.filter(
-    (r) => r.tipo === 'Tanquilla' && r.tieneAcceso === 'Si'
+  // Categorize by the 4 infrastructure types
+  const tanquillasList = recordsWithCoords.filter((r) => r.tipo === 'Tanquilla');
+  const sotanosList = recordsWithCoords.filter(
+    (r) => r.tipo === 'SÓTANO DE TRANSFORMACIÓN' || r.tipo === 'Transformador'
   );
-  const transformadoresConAcceso = recordsWithCoords.filter(
-    (r) => r.tipo === 'Transformador' && r.tieneAcceso === 'Si'
+  const casillasList = recordsWithCoords.filter((r) => r.tipo === 'CASILLA DE TRANSFORMACIÓN');
+  const postesList = recordsWithCoords.filter((r) => r.tipo === 'POSTE DE TRANSFORMACIÓN');
+  const sinAccesoList = recordsWithCoords.filter(
+    (r) => r.tieneAcceso === 'No' || getRecordStatus(r) === 'Sin acceso'
   );
-  const sinAcceso = recordsWithCoords.filter((r) => r.tieneAcceso === 'No');
 
   // Filtered list based on active filter
   const displayedRecords = recordsWithCoords.filter((r) => {
-    if (filterType === 'tanquillas') return r.tipo === 'Tanquilla' && r.tieneAcceso === 'Si';
-    if (filterType === 'transformadores') return r.tipo === 'Transformador' && r.tieneAcceso === 'Si';
-    if (filterType === 'sin_acceso') return r.tieneAcceso === 'No';
+    const itemStatus = getRecordStatus(r);
+    if (filterType === 'tanquillas') return r.tipo === 'Tanquilla';
+    if (filterType === 'sotanos') return r.tipo === 'SÓTANO DE TRANSFORMACIÓN' || r.tipo === 'Transformador';
+    if (filterType === 'casillas') return r.tipo === 'CASILLA DE TRANSFORMACIÓN';
+    if (filterType === 'postes') return r.tipo === 'POSTE DE TRANSFORMACIÓN';
+    if (filterType === 'sin_acceso') return itemStatus === 'Sin acceso' || r.tieneAcceso === 'No';
+    if (filterType === 'inspeccionadas') return itemStatus === 'Inspeccionada';
+    if (filterType === 'por_inspeccionar') return itemStatus === 'Por inspeccionar';
     return true;
   });
 
@@ -67,36 +90,61 @@ export const MapPointsView: React.FC<MapPointsViewProps> = ({
   const currentLat = recordsWithCoords.length > 0 ? recordsWithCoords[0].latitud! : defaultLat;
   const currentLng = recordsWithCoords.length > 0 ? recordsWithCoords[0].longitud! : defaultLng;
 
-  // Function to create custom Leaflet DivIcon with exact colors requested:
-  // - Tanquilla con acceso -> Azul
-  // - Transformador con acceso -> Anaranjado
-  // - Sin acceso -> Rojo
+  // Custom marker generator with respective logos for each type:
+  // - Tanquilla: Logo Layers (Azul)
+  // - Sótano de Transformación: Logo Zap / Rayo (Anaranjado)
+  // - Casilla de Transformación: Logo Building2 / Kiosco (Púrpura)
+  // - Poste de Transformación: Logo Radio / Poste (Cian/Cielo)
+  // - Sin Acceso: Insignia roja con advertencia sin perder el logo del tipo
   const createMarkerIcon = (record: LevantamientoRecord, isSelected: boolean) => {
-    let bgColor = '#2563eb'; // Blue for Tanquilla
-    let borderColor = '#1d4ed8';
-    let ringColor = 'rgba(37, 99, 235, 0.4)';
-    let iconSvg = `<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>`;
+    const isSinAcceso = record.tieneAcceso === 'No' || getRecordStatus(record) === 'Sin acceso';
 
-    if (record.tieneAcceso === 'No') {
-      bgColor = '#ef4444'; // Red for Sin Acceso
-      borderColor = '#b91c1c';
-      ringColor = 'rgba(239, 68, 68, 0.45)';
-      iconSvg = `<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>`;
-    } else if (record.tipo === 'Transformador') {
-      bgColor = '#f97316'; // Orange for Transformador
+    let bgColor = '#2563eb'; // Blue
+    let borderColor = '#1d4ed8';
+    let ringColor = 'rgba(37, 99, 235, 0.45)';
+    // Tanquilla: Stacked layers logo
+    let iconSvg = `<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>`;
+
+    if (record.tipo === 'CASILLA DE TRANSFORMACIÓN') {
+      bgColor = '#7c3aed'; // Purple
+      borderColor = '#5b21b6';
+      ringColor = 'rgba(124, 58, 237, 0.45)';
+      // Casilla: Building2 / Cabina substation logo
+      iconSvg = `<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path stroke-linecap="round" stroke-linejoin="round" d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path stroke-linecap="round" stroke-linejoin="round" d="M10 6h4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M10 10h4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M10 14h4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M10 18h4"></path></svg>`;
+    } else if (record.tipo === 'POSTE DE TRANSFORMACIÓN') {
+      bgColor = '#0284c7'; // Sky / Cyan
+      borderColor = '#0369a1';
+      ringColor = 'rgba(2, 132, 199, 0.45)';
+      // Poste: Radio / Tower pole logo
+      iconSvg = `<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"></path><path stroke-linecap="round" stroke-linejoin="round" d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"></path><circle cx="12" cy="12" r="2"></circle><path stroke-linecap="round" stroke-linejoin="round" d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"></path><path stroke-linecap="round" stroke-linejoin="round" d="M19.1 4.9C23 8.8 23 15.1 19.1 19"></path></svg>`;
+    } else if (record.tipo === 'SÓTANO DE TRANSFORMACIÓN' || record.tipo === 'Transformador') {
+      bgColor = '#ea580c'; // Orange / Amber
       borderColor = '#c2410c';
-      ringColor = 'rgba(249, 115, 22, 0.45)';
-      iconSvg = `<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>`;
+      ringColor = 'rgba(234, 88, 12, 0.45)';
+      // Sótano: High voltage Zap / Rayo logo
+      iconSvg = `<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
     }
 
-    const scale = isSelected ? 'scale-125' : 'hover:scale-110';
-    const shadow = isSelected ? 'box-shadow: 0 0 0 6px ' + ringColor + ', 0 10px 15px -3px rgba(0,0,0,0.4);' : 'box-shadow: 0 4px 6px -1px rgba(0,0,0,0.25);';
+    // Badge indicator for Sin Acceso
+    const sinAccesoBadge = isSinAcceso ? `
+      <div style="position: absolute; top: -3px; right: -3px; width: 14px; height: 14px; background-color: #ef4444; border: 1.5px solid #ffffff; border-radius: 9999px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.5);" title="Sin Acceso">
+        <span style="font-size: 9px; line-height: 1; font-weight: 900; color: white;">!</span>
+      </div>
+    ` : '';
+
+    const scale = isSelected ? 'scale-125 z-50' : 'hover:scale-110';
+    const shadow = isSelected 
+      ? `box-shadow: 0 0 0 6px ${ringColor}, 0 10px 15px -3px rgba(0,0,0,0.4);` 
+      : isSinAcceso
+      ? 'box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.5), 0 4px 6px -1px rgba(0,0,0,0.3);'
+      : 'box-shadow: 0 4px 6px -1px rgba(0,0,0,0.25);';
 
     const html = `
       <div class="relative flex items-center justify-center transition-transform duration-200 ${scale}">
         <div style="background-color: ${bgColor}; border: 2.5px solid ${borderColor}; ${shadow}" 
-             class="w-8 h-8 rounded-full flex items-center justify-center text-white cursor-pointer">
+             class="w-8 h-8 rounded-full flex items-center justify-center text-white cursor-pointer relative">
           ${iconSvg}
+          ${sinAccesoBadge}
         </div>
         <div style="background-color: ${borderColor};" class="absolute -bottom-1.5 w-2 h-2 rotate-45"></div>
       </div>
@@ -178,40 +226,74 @@ export const MapPointsView: React.FC<MapPointsViewProps> = ({
       const marker = L.marker([lat, lng], { icon });
 
       // Build rich popup
-      const statusBadge = record.tieneAcceso === 'No'
-        ? '<span style="background-color: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; padding: 2px 6px; border-radius: 6px; font-weight: 700; font-size: 10px;">🔴 Sin Acceso</span>'
-        : record.tipo === 'Transformador'
-        ? '<span style="background-color: #ffedd5; color: #c2410c; border: 1px solid #fed7aa; padding: 2px 6px; border-radius: 6px; font-weight: 700; font-size: 10px;">🟠 Transformador</span>'
-        : '<span style="background-color: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 2px 6px; border-radius: 6px; font-weight: 700; font-size: 10px;">🔵 Tanquilla</span>';
+      const recordStatus = getRecordStatus(record);
+      const tipoBadge = record.tipo === 'Tanquilla'
+        ? '<span style="background-color: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 2px 8px; border-radius: 9999px; font-weight: 700; font-size: 10px;">🗂️ Tanquilla</span>'
+        : record.tipo === 'CASILLA DE TRANSFORMACIÓN'
+        ? '<span style="background-color: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; padding: 2px 8px; border-radius: 9999px; font-weight: 700; font-size: 10px;">🏢 Casilla Transf.</span>'
+        : record.tipo === 'POSTE DE TRANSFORMACIÓN'
+        ? '<span style="background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; padding: 2px 8px; border-radius: 9999px; font-weight: 700; font-size: 10px;">📡 Poste Transf.</span>'
+        : '<span style="background-color: #ffedd5; color: #c2410c; border: 1px solid #fed7aa; padding: 2px 8px; border-radius: 9999px; font-weight: 700; font-size: 10px;">⚡ Sótano Transf.</span>';
+      
+      const statusBadge = recordStatus === 'Inspeccionada'
+        ? '<span style="background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; padding: 2px 7px; border-radius: 9999px; font-weight: 700; font-size: 10px;">✓ Inspeccionada</span>'
+        : recordStatus === 'Por inspeccionar'
+        ? '<span style="background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a; padding: 2px 7px; border-radius: 9999px; font-weight: 700; font-size: 10px;">⏱ Por inspeccionar</span>'
+        : '<span style="background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; padding: 2px 7px; border-radius: 9999px; font-weight: 700; font-size: 10px;">🔴 Sin acceso</span>';
 
       const popupContent = `
-        <div style="font-family: system-ui, -apple-system, sans-serif; min-width: 200px; padding: 2px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <strong style="font-size: 13px; color: #0f172a;">${record.codigoIdentificador}</strong>
-            ${statusBadge}
+        <div style="font-family: system-ui, -apple-system, sans-serif; min-width: 230px; padding: 4px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px;">
+            <strong style="font-size: 14px; font-weight: 800; color: #0f172a;">${record.codigoIdentificador}</strong>
+            <div style="display: flex; gap: 4px; align-items: center;">
+              ${statusBadge}
+            </div>
           </div>
-          <p style="font-size: 11px; color: #475569; margin: 0 0 6px 0; line-height: 1.3;">${record.direccion || 'Sin dirección especificada'}</p>
-          <div style="font-size: 10px; color: #64748b; font-family: monospace; margin-bottom: 8px;">
-            📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}
+          <div style="margin-bottom: 6px;">
+            ${tipoBadge}
           </div>
-          <div style="display: flex; justify-content: flex-end;">
-            <button id="popup-btn-${record.id}" style="background-color: #2563eb; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;">
-              Ver Detalles
+          <p style="font-size: 11px; color: #475569; margin: 0 0 6px 0; line-height: 1.35;">${record.direccion || 'Sin dirección especificada'}</p>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #64748b; font-family: monospace; margin-bottom: 10px; border-top: 1px dashed #e2e8f0; padding-top: 6px;">
+            <span>📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}</span>
+            ${record.evidencias && record.evidencias.length > 0 ? `<span style="color: #0284c7; font-weight: 700;">📷 ${record.evidencias.length} foto${record.evidencias.length > 1 ? 's' : ''}</span>` : ''}
+          </div>
+          <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
+            <button class="btn-edit-popup" id="popup-edit-btn-${record.id}" style="background-color: #f59e0b; color: #ffffff; border: none; padding: 5px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.15);">
+              ✏️ Editar
+            </button>
+            <button class="btn-detail-popup" id="popup-btn-${record.id}" style="background-color: #2563eb; color: #ffffff; border: none; padding: 5px 10px; border-radius: 8px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+              👁️ Detalle
             </button>
           </div>
         </div>
       `;
 
-      marker.bindPopup(popupContent);
+      marker.bindPopup(popupContent, { maxWidth: 300 });
 
       marker.on('click', () => {
         setSelectedRecord(record);
       });
 
-      marker.on('popupopen', () => {
-        const btn = document.getElementById(`popup-btn-${record.id}`);
-        if (btn) {
-          btn.onclick = () => onInspectRecord(record);
+      marker.on('popupopen', (e) => {
+        const popupElement = e.popup.getElement();
+        if (popupElement) {
+          const editBtn = popupElement.querySelector('.btn-edit-popup') as HTMLButtonElement | null;
+          if (editBtn) {
+            editBtn.onclick = (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              onEditRecord(record);
+            };
+          }
+
+          const detailBtn = popupElement.querySelector('.btn-detail-popup') as HTMLButtonElement | null;
+          if (detailBtn) {
+            detailBtn.onclick = (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              onInspectRecord(record);
+            };
+          }
         }
       });
 
@@ -286,46 +368,113 @@ export const MapPointsView: React.FC<MapPointsViewProps> = ({
         </div>
       </div>
 
-      {/* Map Legend Banner (Explicit Color Codes) */}
+      {/* Map Legend Banner (All 4 Types with Respective Logos) */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-4 text-xs">
-          <span className="font-bold text-slate-700 flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2.5 text-xs">
+          <span className="font-bold text-slate-700 flex items-center gap-1.5 mr-1">
             <Filter className="w-4 h-4 text-slate-500" />
-            Convención de Colores:
+            Logos y Convención:
           </span>
 
-          {/* Tanquillas (Azul) */}
-          <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200 text-blue-900 font-semibold">
-            <span className="w-3.5 h-3.5 rounded-full bg-blue-600 border border-blue-800 shadow-xs flex items-center justify-center">
-              <span className="w-1 h-1 rounded-full bg-white"></span>
+          {/* Tanquillas (Azul - Layers) */}
+          <button
+            onClick={() => setFilterType(filterType === 'tanquillas' ? 'all' : 'tanquillas')}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-semibold transition active:scale-95 ${
+              filterType === 'tanquillas'
+                ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                : 'bg-blue-50 text-blue-900 border-blue-200 hover:bg-blue-100'
+            }`}
+          >
+            <span className="w-4 h-4 rounded-full bg-blue-600 border border-blue-700 flex items-center justify-center text-white">
+              <Layers className="w-2.5 h-2.5" />
             </span>
             <span>Tanquillas (Azul)</span>
-            <span className="bg-blue-200/80 text-blue-800 text-[10px] px-1.5 py-0.2 rounded-full">
-              {tanquillasConAcceso.length}
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              filterType === 'tanquillas' ? 'bg-blue-700 text-white' : 'bg-blue-200 text-blue-900'
+            }`}>
+              {tanquillasList.length}
             </span>
-          </div>
+          </button>
 
-          {/* Transformadores (Anaranjado) */}
-          <div className="flex items-center gap-2 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200 text-amber-900 font-semibold">
-            <span className="w-3.5 h-3.5 rounded-full bg-orange-500 border border-orange-700 shadow-xs flex items-center justify-center">
-              <span className="w-1 h-1 rounded-full bg-white"></span>
+          {/* Sótanos de Transformación (Anaranjado - Zap) */}
+          <button
+            onClick={() => setFilterType(filterType === 'sotanos' ? 'all' : 'sotanos')}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-semibold transition active:scale-95 ${
+              filterType === 'sotanos'
+                ? 'bg-orange-600 text-white border-orange-700 shadow-xs'
+                : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+            }`}
+          >
+            <span className="w-4 h-4 rounded-full bg-orange-600 border border-orange-700 flex items-center justify-center text-white">
+              <Zap className="w-2.5 h-2.5" />
             </span>
-            <span>Transformadores (Anaranjado)</span>
-            <span className="bg-amber-200/80 text-amber-800 text-[10px] px-1.5 py-0.2 rounded-full">
-              {transformadoresConAcceso.length}
+            <span>Sótanos Transf. (Naranja)</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              filterType === 'sotanos' ? 'bg-orange-700 text-white' : 'bg-amber-200 text-amber-900'
+            }`}>
+              {sotanosList.length}
             </span>
-          </div>
+          </button>
+
+          {/* Casillas de Transformación (Púrpura - Building2) */}
+          <button
+            onClick={() => setFilterType(filterType === 'casillas' ? 'all' : 'casillas')}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-semibold transition active:scale-95 ${
+              filterType === 'casillas'
+                ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                : 'bg-purple-50 text-purple-900 border-purple-200 hover:bg-purple-100'
+            }`}
+          >
+            <span className="w-4 h-4 rounded-full bg-purple-600 border border-purple-700 flex items-center justify-center text-white">
+              <Building2 className="w-2.5 h-2.5" />
+            </span>
+            <span>Casillas Transf. (Púrpura)</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              filterType === 'casillas' ? 'bg-purple-700 text-white' : 'bg-purple-200 text-purple-900'
+            }`}>
+              {casillasList.length}
+            </span>
+          </button>
+
+          {/* Postes de Transformación (Cian - Radio) */}
+          <button
+            onClick={() => setFilterType(filterType === 'postes' ? 'all' : 'postes')}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-semibold transition active:scale-95 ${
+              filterType === 'postes'
+                ? 'bg-sky-600 text-white border-sky-700 shadow-xs'
+                : 'bg-sky-50 text-sky-900 border-sky-200 hover:bg-sky-100'
+            }`}
+          >
+            <span className="w-4 h-4 rounded-full bg-sky-600 border border-sky-700 flex items-center justify-center text-white">
+              <Radio className="w-2.5 h-2.5" />
+            </span>
+            <span>Postes Transf. (Cian)</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              filterType === 'postes' ? 'bg-sky-700 text-white' : 'bg-sky-200 text-sky-900'
+            }`}>
+              {postesList.length}
+            </span>
+          </button>
 
           {/* Sin Acceso (Rojo) */}
-          <div className="flex items-center gap-2 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 text-rose-900 font-bold">
-            <span className="w-3.5 h-3.5 rounded-full bg-rose-500 border border-rose-700 shadow-xs flex items-center justify-center">
-              <span className="w-1 h-1 rounded-full bg-white"></span>
+          <button
+            onClick={() => setFilterType(filterType === 'sin_acceso' ? 'all' : 'sin_acceso')}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-bold transition active:scale-95 ${
+              filterType === 'sin_acceso'
+                ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                : 'bg-rose-50 text-rose-900 border-rose-200 hover:bg-rose-100'
+            }`}
+          >
+            <span className="w-4 h-4 rounded-full bg-rose-500 border border-rose-700 flex items-center justify-center text-white">
+              <AlertTriangle className="w-2.5 h-2.5" />
             </span>
             <span>Sin Acceso (Rojo)</span>
-            <span className="bg-rose-200 text-rose-900 text-[10px] px-1.5 py-0.2 rounded-full">
-              {sinAcceso.length}
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              filterType === 'sin_acceso' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-900'
+            }`}>
+              {sinAccesoList.length}
             </span>
-          </div>
+          </button>
         </div>
 
         {/* Satellite vs Streets Toggle */}
@@ -355,38 +504,55 @@ export const MapPointsView: React.FC<MapPointsViewProps> = ({
         {/* Map Container */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col h-[540px]">
           
-          {/* Top Bar inside Map */}
+          {/* Top Bar inside Map with Category Filters */}
           <div className="p-3 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2 text-xs font-semibold z-10">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
               <span>Visor Cartográfico Interactivo UCV</span>
             </div>
 
-            {/* Quick Filter Buttons */}
-            <div className="flex items-center gap-1 bg-slate-800 p-0.5 rounded-lg text-[11px]">
+            {/* Quick Filter Buttons with Respective Logos */}
+            <div className="flex flex-wrap items-center gap-1 bg-slate-800 p-1 rounded-xl text-[11px]">
               <button
                 onClick={() => setFilterType('all')}
-                className={`px-2 py-0.5 rounded ${filterType === 'all' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'}`}
+                className={`px-2 py-0.5 rounded font-bold transition ${filterType === 'all' ? 'bg-slate-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'}`}
               >
                 Todos ({recordsWithCoords.length})
               </button>
               <button
                 onClick={() => setFilterType('tanquillas')}
-                className={`px-2 py-0.5 rounded ${filterType === 'tanquillas' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'}`}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold transition ${filterType === 'tanquillas' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'}`}
+                title="Filtrar Tanquillas"
               >
-                Azul
+                <Layers className="w-3 h-3 text-blue-300" /> Tanquillas ({tanquillasList.length})
               </button>
               <button
-                onClick={() => setFilterType('transformadores')}
-                className={`px-2 py-0.5 rounded ${filterType === 'transformadores' ? 'bg-orange-600 text-white' : 'text-slate-300 hover:text-white'}`}
+                onClick={() => setFilterType('sotanos')}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold transition ${filterType === 'sotanos' ? 'bg-orange-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'}`}
+                title="Filtrar Sótanos de Transformación"
               >
-                Anaranjado
+                <Zap className="w-3 h-3 text-amber-300" /> Sótanos ({sotanosList.length})
+              </button>
+              <button
+                onClick={() => setFilterType('casillas')}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold transition ${filterType === 'casillas' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'}`}
+                title="Filtrar Casillas de Transformación"
+              >
+                <Building2 className="w-3 h-3 text-purple-300" /> Casillas ({casillasList.length})
+              </button>
+              <button
+                onClick={() => setFilterType('postes')}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold transition ${filterType === 'postes' ? 'bg-sky-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'}`}
+                title="Filtrar Postes de Transformación"
+              >
+                <Radio className="w-3 h-3 text-sky-300" /> Postes ({postesList.length})
               </button>
               <button
                 onClick={() => setFilterType('sin_acceso')}
-                className={`px-2 py-0.5 rounded ${filterType === 'sin_acceso' ? 'bg-rose-600 text-white' : 'text-slate-300 hover:text-white'}`}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold transition ${filterType === 'sin_acceso' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'}`}
+                title="Filtrar Sin Acceso"
               >
-                Rojo
+                <AlertTriangle className="w-3 h-3 text-rose-300" /> Sin acceso ({sinAccesoList.length})
               </button>
             </div>
           </div>
@@ -422,8 +588,31 @@ export const MapPointsView: React.FC<MapPointsViewProps> = ({
 
           <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
             {displayedRecords.map((rec) => {
-              const isSinAcceso = rec.tieneAcceso === 'No';
-              const isTrafo = rec.tipo === 'Transformador';
+              const itemStatus = getRecordStatus(rec);
+              const isSinAcceso = itemStatus === 'Sin acceso' || rec.tieneAcceso === 'No';
+
+              // Get respective category logo and styling
+              let typeIcon = <Layers className="w-3 h-3 text-white" />;
+              let typeBg = 'bg-blue-600 border-blue-800';
+              let badgeClass = 'text-blue-700 bg-blue-50 border-blue-200';
+              let badgeLabel = 'Tanquilla';
+
+              if (rec.tipo === 'CASILLA DE TRANSFORMACIÓN') {
+                typeIcon = <Building2 className="w-3 h-3 text-white" />;
+                typeBg = 'bg-purple-600 border-purple-800';
+                badgeClass = 'text-purple-700 bg-purple-50 border-purple-200';
+                badgeLabel = 'Casilla Transf.';
+              } else if (rec.tipo === 'POSTE DE TRANSFORMACIÓN') {
+                typeIcon = <Radio className="w-3 h-3 text-white" />;
+                typeBg = 'bg-sky-600 border-sky-800';
+                badgeClass = 'text-sky-700 bg-sky-50 border-sky-200';
+                badgeLabel = 'Poste Transf.';
+              } else if (rec.tipo === 'SÓTANO DE TRANSFORMACIÓN' || rec.tipo === 'Transformador') {
+                typeIcon = <Zap className="w-3 h-3 text-white" />;
+                typeBg = 'bg-orange-600 border-orange-800';
+                badgeClass = 'text-amber-700 bg-amber-50 border-amber-200';
+                badgeLabel = 'Sótano Transf.';
+              }
 
               return (
                 <div
@@ -437,33 +626,33 @@ export const MapPointsView: React.FC<MapPointsViewProps> = ({
                 >
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
-                      {/* Color dot indicator */}
+                      {/* Logo badge of respective type */}
                       <span 
-                        className={`w-3 h-3 rounded-full border shadow-2xs ${
-                          isSinAcceso 
-                            ? 'bg-rose-500 border-rose-700' 
-                            : isTrafo 
-                            ? 'bg-orange-500 border-orange-700' 
-                            : 'bg-blue-600 border-blue-800'
-                        }`}
-                        title={isSinAcceso ? 'Sin Acceso (Rojo)' : isTrafo ? 'Transformador (Anaranjado)' : 'Tanquilla (Azul)'}
-                      />
+                        className={`w-6 h-6 rounded-full border shadow-2xs flex items-center justify-center relative ${typeBg}`}
+                        title={`${badgeLabel} ${isSinAcceso ? '(Sin acceso)' : ''}`}
+                      >
+                        {typeIcon}
+                        {isSinAcceso && (
+                          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 border border-white" />
+                        )}
+                      </span>
                       <span className="font-bold text-xs text-slate-900">{rec.codigoIdentificador}</span>
                     </div>
 
-                    {isSinAcceso ? (
-                      <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                        Sin Acceso
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded border ${badgeClass}`}>
+                        {badgeLabel}
                       </span>
-                    ) : (
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${
-                        isTrafo 
-                          ? 'text-amber-700 bg-amber-50 border-amber-200' 
-                          : 'text-blue-700 bg-blue-50 border-blue-200'
+                      <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded border ${
+                        itemStatus === 'Inspeccionada'
+                          ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                          : itemStatus === 'Por inspeccionar'
+                          ? 'text-amber-700 bg-amber-50 border-amber-200'
+                          : 'text-rose-700 bg-rose-50 border-rose-200'
                       }`}>
-                        {rec.tipo}
+                        {itemStatus}
                       </span>
-                    )}
+                    </div>
                   </div>
 
                   <p className="text-[11px] text-slate-600 line-clamp-1 mb-1.5">
@@ -472,15 +661,29 @@ export const MapPointsView: React.FC<MapPointsViewProps> = ({
 
                   <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
                     <span>{rec.latitud?.toFixed(5)}, {rec.longitud?.toFixed(5)}</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onInspectRecord(rec);
-                      }}
-                      className="text-blue-600 hover:underline font-semibold"
-                    >
-                      Detalle
-                    </button>
+                    <div className="flex items-center gap-1.5 font-sans">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditRecord(rec);
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition"
+                        title="Editar levantamiento"
+                      >
+                        <Pencil className="w-2.5 h-2.5" />
+                        <span>Editar</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onInspectRecord(rec);
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition"
+                      >
+                        <Eye className="w-2.5 h-2.5" />
+                        <span>Detalle</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -495,6 +698,88 @@ export const MapPointsView: React.FC<MapPointsViewProps> = ({
         </div>
 
       </div>
+
+      {/* Floating Selected Record Action Bar */}
+      {selectedRecord && (
+        <div className="bg-white p-4 rounded-2xl border-2 border-amber-400/90 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in slide-in-from-bottom-2">
+          <div className="flex items-center gap-3">
+            {/* Respective Category Logo */}
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-xs ${
+              selectedRecord.tipo === 'CASILLA DE TRANSFORMACIÓN'
+                ? 'bg-purple-600'
+                : selectedRecord.tipo === 'POSTE DE TRANSFORMACIÓN'
+                ? 'bg-sky-600'
+                : selectedRecord.tipo === 'SÓTANO DE TRANSFORMACIÓN' || selectedRecord.tipo === 'Transformador'
+                ? 'bg-orange-600'
+                : 'bg-blue-600'
+            }`}>
+              {selectedRecord.tipo === 'CASILLA DE TRANSFORMACIÓN' ? (
+                <Building2 className="w-6 h-6" />
+              ) : selectedRecord.tipo === 'POSTE DE TRANSFORMACIÓN' ? (
+                <Radio className="w-6 h-6" />
+              ) : selectedRecord.tipo === 'SÓTANO DE TRANSFORMACIÓN' || selectedRecord.tipo === 'Transformador' ? (
+                <Zap className="w-6 h-6" />
+              ) : (
+                <Layers className="w-6 h-6" />
+              )}
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-extrabold text-slate-900 text-base">
+                  {selectedRecord.codigoIdentificador}
+                </span>
+                <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                  selectedRecord.tipo === 'CASILLA DE TRANSFORMACIÓN'
+                    ? 'bg-purple-50 text-purple-800 border-purple-200'
+                    : selectedRecord.tipo === 'POSTE DE TRANSFORMACIÓN'
+                    ? 'bg-sky-50 text-sky-800 border-sky-200'
+                    : selectedRecord.tipo === 'SÓTANO DE TRANSFORMACIÓN' || selectedRecord.tipo === 'Transformador'
+                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                    : 'bg-blue-50 text-blue-800 border-blue-200'
+                }`}>
+                  {formatTipoDisplayName(selectedRecord.tipo)}
+                </span>
+                <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                  getRecordStatus(selectedRecord) === 'Inspeccionada'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                    : getRecordStatus(selectedRecord) === 'Por inspeccionar'
+                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                    : 'bg-rose-50 text-rose-800 border-rose-300'
+                }`}>
+                  {getRecordStatus(selectedRecord)}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 line-clamp-1 mt-0.5">
+                {selectedRecord.direccion || 'Sin dirección registrada'} • Coordenadas: {selectedRecord.latitud?.toFixed(5)}, {selectedRecord.longitud?.toFixed(5)}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+            <button
+              onClick={() => onEditRecord(selectedRecord)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-xs font-bold transition shadow-sm"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              <span>Editar Levantamiento</span>
+            </button>
+            <button
+              onClick={() => onInspectRecord(selectedRecord)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-semibold transition shadow-sm"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Ver Ficha Completa</span>
+            </button>
+            <button
+              onClick={() => setSelectedRecord(null)}
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              title="Cerrar selección"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );

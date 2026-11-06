@@ -4,7 +4,7 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 
 const app = express();
-const PORT = 3007;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'levantamientos.json');
 
@@ -93,6 +93,27 @@ app.post('/api/sync-google-sheets', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Error proxying to Google Sheets' });
   }
+});
+
+// PDF Manual Download and View Endpoints
+app.get('/manual_levantamiento_ucv.pdf', (req, res) => {
+  const filePath = path.join(process.cwd(), 'public', 'manual_levantamiento_ucv.pdf');
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="Manual_Levantamiento_Media_Tension_UCV.pdf"');
+    return res.sendFile(filePath);
+  }
+  res.status(404).send('Manual PDF not found');
+});
+
+app.get('/api/manual-pdf/view', (req, res) => {
+  const filePath = path.join(process.cwd(), 'public', 'manual_levantamiento_ucv.pdf');
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="Manual_Levantamiento_Media_Tension_UCV.pdf"');
+    return res.sendFile(filePath);
+  }
+  res.status(404).send('Manual PDF not found');
 });
 
 // Vite & Static file setup

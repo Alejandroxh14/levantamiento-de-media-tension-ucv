@@ -8,13 +8,14 @@ import {
   Wifi, 
   WifiOff, 
   Download,
-  Share2
+  Share2,
+  LayoutDashboard
 } from 'lucide-react';
 import { UCVLogo } from './UCVLogo';
 
 interface NavbarProps {
-  activeTab: 'form' | 'records' | 'export' | 'map';
-  setActiveTab: (tab: 'form' | 'records' | 'export' | 'map') => void;
+  activeTab: 'dashboard' | 'form' | 'records' | 'export' | 'map';
+  setActiveTab: (tab: 'dashboard' | 'form' | 'records' | 'export' | 'map') => void;
   totalRecords: number;
   tanquillasCount: number;
   transformadoresCount: number;
@@ -38,7 +39,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-20">
           
           {/* Logo & Title */}
-          <div className="flex items-center space-x-4 cursor-pointer select-none py-1" onClick={() => setActiveTab('form')}>
+          <div className="flex items-center space-x-4 cursor-pointer select-none py-1" onClick={() => setActiveTab('dashboard')}>
             <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white p-0.5 flex items-center justify-center shadow-lg border-2 border-amber-400/80 hover:scale-105 transition duration-200 overflow-hidden flex-shrink-0">
               <UCVLogo className="w-full h-full object-contain" />
             </div>
@@ -93,6 +94,19 @@ export const Navbar: React.FC<NavbarProps> = ({
         <nav className="flex space-x-1 sm:space-x-2 border-t border-slate-800/80 py-2 overflow-x-auto scrollbar-none">
           
           <button
+            id="nav_tab_dashboard"
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+              activeTab === 'dashboard'
+                ? 'bg-blue-600 text-white shadow'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4 text-blue-200" />
+            <span>Dashboard</span>
+          </button>
+
+          <button
             id="nav_tab_form"
             onClick={() => setActiveTab('form')}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
@@ -131,7 +145,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <Share2 className="w-4 h-4 text-blue-200" />
-            <span>Google Sheets & Excel</span>
+            <span>Exportación de Datos</span>
           </button>
 
           <button

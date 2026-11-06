@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { LevantamientoRecord, EvidenciaFoto } from '../types';
+import { 
+  LevantamientoRecord, 
+  EvidenciaFoto, 
+  formatTipoDisplayName,
+  EstadoLevantamiento,
+  ESTADOS_LEVANTAMIENTO,
+  getRecordStatus
+} from '../types';
 import { 
   X, 
   MapPin, 
@@ -8,12 +15,21 @@ import {
   Calendar, 
   ShieldAlert, 
   CheckCircle, 
+  CheckCircle2,
   XCircle, 
+  AlertTriangle, 
   ExternalLink,
   Image as ImageIcon,
   Share2,
   Eye,
-  Download
+  Download,
+  Pencil,
+  Clock,
+  Shield,
+  Radio,
+  Activity,
+  GitBranch,
+  Building2
 } from 'lucide-react';
 import { formatCanalesText, formatEmpalmesText, formatConductoresMTText } from '../services/excelService';
 import { UCVLogo } from './UCVLogo';
@@ -21,17 +37,23 @@ import { UCVLogo } from './UCVLogo';
 interface RecordDetailModalProps {
   record: LevantamientoRecord | null;
   onClose: () => void;
+  onEditRecord?: (record: LevantamientoRecord) => void;
   onSyncGoogleSheets?: (record: LevantamientoRecord) => void;
+  onUpdateStatus?: (recordId: string, newStatus: EstadoLevantamiento) => void;
 }
 
 export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
   record,
   onClose,
+  onEditRecord,
   onSyncGoogleSheets,
+  onUpdateStatus,
 }) => {
   const [selectedPhoto, setSelectedPhoto] = useState<EvidenciaFoto | null>(null);
 
   if (!record) return null;
+
+  const status = getRecordStatus(record);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
@@ -44,16 +66,23 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
               <UCVLogo className="w-full h-full object-contain" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold text-lg">{record.codigoIdentificador}</span>
                 <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-950 text-blue-300 border border-blue-800">
-                  {record.tipo}
+                  {formatTipoDisplayName(record.tipo)}
                 </span>
-                {record.tieneAcceso === 'No' && (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-950 text-rose-300 border border-rose-800">
-                    Sin Acceso
-                  </span>
-                )}
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border inline-flex items-center gap-1 ${
+                  status === 'Inspeccionada'
+                    ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                    : status === 'Por inspeccionar'
+                    ? 'bg-amber-950 text-amber-300 border-amber-700'
+                    : 'bg-rose-950 text-rose-300 border-rose-700'
+                }`}>
+                  {status === 'Inspeccionada' && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                  {status === 'Por inspeccionar' && <Clock className="w-3 h-3 text-amber-400" />}
+                  {status === 'Sin acceso' && <AlertTriangle className="w-3 h-3 text-rose-400" />}
+                  {status}
+                </span>
               </div>
               <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                 <Calendar className="w-3 h-3" /> {record.fecha} • UCV Media Tensión
@@ -71,6 +100,50 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="p-5 overflow-y-auto space-y-5 text-sm">
+          
+          {/* Panel de Gestión de Estado */}
+          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                  Estado del Levantamiento (Status)
+                </span>
+                <p className="text-xs text-slate-500 font-medium">
+                  {status === 'Inspeccionada' && 'El levantamiento ha sido ejecutado y validado en campo.'}
+                  {status === 'Por inspeccionar' && 'El punto o tramo está registrado o asignado, pero aún no se ha realizado la inspección.'}
+                  {status === 'Sin acceso' && 'Sin acceso al punto o infraestructura (condición especial en campo).'}
+                </p>
+              </div>
+
+              {onUpdateStatus && (
+                <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                  {(['Inspeccionada', 'Por inspeccionar', 'Sin acceso'] as EstadoLevantamiento[]).map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => onUpdateStatus(record.id, st)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
+                        status === st
+                          ? st === 'Inspeccionada'
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                            : st === 'Por inspeccionar'
+                            ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                            : 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {status === 'Sin acceso' && record.motivoSinAcceso && (
+              <div className="text-xs bg-rose-50 text-rose-800 p-2.5 rounded-lg border border-rose-200">
+                <strong>Motivo registrado:</strong> {record.motivoSinAcceso}
+              </div>
+            )}
+          </div>
           
           {/* Ubicación & Coordenadas */}
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
@@ -190,16 +263,52 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
             </div>
           )}
 
-          {/* Datos Transformador */}
-          {record.tipo === 'Transformador' && (
-            <div className="p-4 bg-amber-50/60 rounded-xl border border-amber-200 space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
-                <ShieldAlert className="w-4 h-4 text-amber-600" />
-                Especificaciones de Transformador
-              </h4>
+          {/* Datos Sótano de Transformación */}
+          {(record.tipo === 'Transformador' || record.tipo === 'SÓTANO DE TRANSFORMACIÓN') && (
+            <div className="p-4 bg-amber-50/60 rounded-xl border border-amber-200 space-y-3.5">
+              <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4 text-amber-600" />
+                  Especificaciones de Sótano de Transformación
+                </h4>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-600 text-white">
+                  Sótano
+                </span>
+              </div>
+
+              {/* 5. Transformador */}
+              {record.sotanoData && (
+                <div className="space-y-1.5 text-xs">
+                  <span className="font-bold text-amber-900 flex items-center gap-1">
+                    <span>5.</span> Transformador
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-white p-2.5 rounded-lg border border-amber-100 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block">Placa Característica:</span>
+                      <span className="font-semibold text-slate-800">
+                        {record.sotanoData.estadoPlaca || 'No indicado'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Potencia Nominal:</span>
+                      <span className="font-semibold text-slate-800">
+                        {record.sotanoData.potenciaNominalKva ? `${record.sotanoData.potenciaNominalKva} KVA` : 'No indicada'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Tensión de Operación:</span>
+                      <span className="font-semibold text-slate-800">
+                        {record.sotanoData.tensionPrimariaKv || '-'} kV / {record.sotanoData.tensionSecundariaKv || '-'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 8. Protecciones y 9. Conductores MT */}
               <div className="text-xs space-y-1.5">
                 <p>
-                  <span className="font-semibold text-slate-700">Protecciones:</span>{' '}
+                  <span className="font-semibold text-slate-700">8. Protecciones:</span>{' '}
                   {record.tieneProtecciones || 'No registrado'}
                 </p>
                 {record.obsProtecciones && (
@@ -210,7 +319,7 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
                 {record.conductoresMT && record.conductoresMT.length > 0 && (
                   <div>
                     <span className="font-semibold text-slate-700 block mb-1">
-                      Conductores MT al transformador:
+                      9. Conductores MT al transformador:
                     </span>
                     <div className="space-y-1">
                       {record.conductoresMT.map((c, i) => (
@@ -222,6 +331,221 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Ficha Técnica de Casilla de Transformación ("Caseta De Tx") */}
+          {record.tipo === 'CASILLA DE TRANSFORMACIÓN' && (
+            <div className="p-4 bg-blue-50/70 rounded-xl border border-blue-200 space-y-3.5">
+              <div className="flex items-center justify-between border-b border-blue-200/60 pb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-blue-600" />
+                  Ficha Técnica: Casilla de Transformación (Caseta De Tx)
+                </h4>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600 text-white">
+                  Caseta
+                </span>
+              </div>
+
+              {/* 5. Transformador */}
+              <div className="space-y-1.5 text-xs">
+                <span className="font-bold text-blue-900 flex items-center gap-1">
+                  <span>5.</span> Transformador
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-white p-2.5 rounded-lg border border-blue-100 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block">Placa Característica:</span>
+                    <span className="font-semibold text-slate-800">
+                      {record.casillaData?.estadoPlaca || 'No indicado'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Potencia Nominal:</span>
+                    <span className="font-semibold text-slate-800">
+                      {record.casillaData?.potenciaNominalKva ? `${record.casillaData.potenciaNominalKva} KVA` : 'No indicada'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Tensión de Operación:</span>
+                    <span className="font-semibold text-slate-800">
+                      {record.casillaData?.tensionPrimariaKv || '-'} kV / {record.casillaData?.tensionSecundariaKv || '-'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 6. Protecciones */}
+              <div className="space-y-1.5 text-xs">
+                <span className="font-bold text-blue-900 flex items-center gap-1">
+                  <span>6.</span> Protecciones
+                </span>
+                <div className="bg-white p-2.5 rounded-lg border border-blue-100 text-[11px] space-y-1">
+                  <p>
+                    <span className="text-slate-400">¿Protecciones visibles/operativas?: </span>
+                    <span className="font-semibold text-slate-800">
+                      {record.casillaData?.tieneProtecciones || record.tieneProtecciones || 'No registrado'}
+                    </span>
+                  </p>
+                  {(record.casillaData?.obsProtecciones || record.obsProtecciones) && (
+                    <p className="text-slate-700 bg-slate-50 p-1.5 rounded text-[11px]">
+                      {record.casillaData?.obsProtecciones || record.obsProtecciones}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* 8. Tablero de BT y Control de Alumbrado */}
+              <div className="space-y-1.5 text-xs">
+                <span className="font-bold text-blue-900 flex items-center gap-1">
+                  <span>8.</span> Tablero de BT y Control de Alumbrado
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-2.5 rounded-lg border border-blue-100 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block">• Breaker / Interruptor Principal:</span>
+                    <span className="font-semibold text-slate-800">
+                      Capacidad: {record.casillaData?.breakerCapacidadA ? `${record.casillaData.breakerCapacidadA} A` : 'No indicada'}
+                    </span>
+                    <span className="text-slate-500 block text-[10px]">
+                      Estado: {record.casillaData?.breakerEstado || 'No indicado'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">• Control de Alumbrado:</span>
+                    <span className="font-semibold text-slate-800">
+                      Tipo: {record.casillaData?.tipoControlAlumbrado || 'No indicado'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 9. Conductores de MT */}
+              {record.conductoresMT && record.conductoresMT.length > 0 && (
+                <div className="space-y-1.5 text-xs">
+                  <span className="font-bold text-blue-900 flex items-center gap-1">
+                    <span>9.</span> Conductores de MT
+                  </span>
+                  <div className="space-y-1 bg-white p-2.5 rounded-lg border border-blue-100 text-[11px]">
+                    {record.conductoresMT.map((c, i) => (
+                      <div key={i} className="flex items-center justify-between py-0.5 border-b border-slate-100 last:border-b-0">
+                        <span className="font-medium text-slate-700">
+                          Categoría {c.categoria} - Calibre {c.calibre}
+                        </span>
+                        <span className="font-bold text-blue-800">
+                          {c.cantidad} unidad(es)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Datos Detallados de POSTE DE TRANSFORMACIÓN */}
+          {record.tipo === 'POSTE DE TRANSFORMACIÓN' && record.posteData && (
+            <div className="p-4 bg-sky-50/70 rounded-xl border border-sky-200 space-y-3.5">
+              <div className="flex items-center justify-between border-b border-sky-200/60 pb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-sky-900 flex items-center gap-1.5">
+                  <Zap className="w-4 h-4 text-sky-600" />
+                  Ficha Técnica de Poste de Transformación
+                </h4>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-600 text-white">
+                  Aéreo
+                </span>
+              </div>
+
+              {/* 5. Transformador Aéreo */}
+              <div className="space-y-1.5 text-xs">
+                <span className="font-bold text-sky-900 flex items-center gap-1">
+                  <span>5.</span> Transformador Aéreo
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-2.5 rounded-lg border border-sky-100 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block">Configuración:</span>
+                    <span className="font-semibold text-slate-800">
+                      {record.posteData.configuracionBanco === 'Otro'
+                        ? `Otro: ${record.posteData.configuracionBancoOtro || ''}`
+                        : record.posteData.configuracionBanco || 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Potencia Nominal:</span>
+                    <span className="font-semibold text-slate-800">
+                      {record.posteData.potenciaNominalKva ? `${record.posteData.potenciaNominalKva} kVA` : 'N/A'}
+                      {record.posteData.potenciaBanco3xKva ? ` (Total Banco: ${record.posteData.potenciaBanco3xKva})` : ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Tensiones Operativas:</span>
+                    <span className="font-semibold text-slate-800">
+                      AT: {record.posteData.tensionPrimarioKv || 'N/A'} kV | BT: {record.posteData.tensionSecundarioKv || 'N/A'} V
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Tipo de Conexión:</span>
+                    <span className="font-semibold text-slate-800">
+                      {(record.posteData.conexion === 'Otro' || record.posteData.conexion === 'OTROS') && record.posteData.conexionOtro
+                        ? `OTROS (${record.posteData.conexionOtro})`
+                        : record.posteData.conexion || 'N/A'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 6. Descargadores de Sobretensiones y Protecciones */}
+              <div className="space-y-1.5 text-xs pt-1">
+                <span className="font-bold text-sky-900 flex items-center gap-1">
+                  <span>6.</span> Descargadores de Sobretensiones y Protecciones
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-white p-2.5 rounded-lg border border-sky-100 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block">¿Posee Pararrayos?:</span>
+                    <span className="font-semibold text-slate-800">{record.posteData.pararrayosPresente || 'Si'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Cantidad Pararrayos:</span>
+                    <span className="font-semibold text-slate-800">
+                      {record.posteData.pararrayosPresente === 'No' ? 'N/A (No posee)' : (record.posteData.pararrayosCantidad || '3')}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">¿Hay Portafusibles?:</span>
+                    <span className="font-semibold text-slate-800">{record.posteData.portafusiblesPresente || 'Si'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Corriente del Fusible:</span>
+                    <span className="font-semibold text-slate-800">
+                      {record.posteData.portafusiblesPresente === 'No' ? 'N/A (Sin fusible)' : (record.posteData.corrienteFusibleAmp || record.posteData.capacidadFusibleAmp || '15A')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 8. Sistema de Puesta a Tierra */}
+              <div className="space-y-1.5 text-xs pt-1">
+                <span className="font-bold text-sky-900 flex items-center gap-1">
+                  <span>8.</span> Sistema de Puesta a Tierra
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 bg-white p-2.5 rounded-lg border border-sky-100 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block">Cable Visible y Continuo:</span>
+                    <span className="font-semibold text-slate-800">{record.posteData.bajanteCableVisibleContinuo || 'Si'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Estado Cable / Protección:</span>
+                    <span className="font-semibold text-slate-800">{record.posteData.bajanteEstadoCableProteccion || 'Adecuado / Protegido con tubo'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Evidencia Jabalina / Registro:</span>
+                    <span className="font-semibold text-slate-800">{record.posteData.jabalinaORegistroBase || 'SI'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Estado de Conexión:</span>
+                    <span className="font-semibold text-slate-800">{record.posteData.estadoConexionTierra || 'Firme y en buen estado'}</span>
+                  </div>
+                </div>
+              </div>
+
             </div>
           )}
 
@@ -279,7 +603,20 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-slate-100 border-t border-slate-200 flex justify-end gap-2">
+        <div className="p-4 bg-slate-100 border-t border-slate-200 flex flex-wrap items-center justify-end gap-2">
+          {onEditRecord && (
+            <button
+              onClick={() => {
+                onClose();
+                onEditRecord(record);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition shadow-xs mr-auto"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              Editar Levantamiento Completo
+            </button>
+          )}
+
           {onSyncGoogleSheets && (
             <button
               onClick={() => onSyncGoogleSheets(record)}

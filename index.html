@@ -16,6 +16,35 @@
   </head>
   <body class="bg-slate-50 text-slate-900 antialiased selection:bg-blue-600 selection:text-white">
     <div id="root"></div>
+    <script>
+      // Compatibility wrapper for browser extensions attempting to assign window.fetch
+      (function() {
+        try {
+          var originalFetch = window.fetch;
+          var customFetch = originalFetch ? originalFetch.bind(window) : null;
+          Object.defineProperty(window, 'fetch', {
+            configurable: true,
+            enumerable: true,
+            get: function() {
+              return customFetch || originalFetch;
+            },
+            set: function(val) {
+              customFetch = val;
+            }
+          });
+        } catch (e) {
+          // Ignore if already locked by environment
+        }
+
+        // Prevent external chrome-extension errors from disrupting application lifecycle
+        window.addEventListener('error', function(event) {
+          if (event && event.filename && event.filename.indexOf('chrome-extension://') !== -1) {
+            event.stopImmediatePropagation();
+            if (event.preventDefault) event.preventDefault();
+          }
+        }, true);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

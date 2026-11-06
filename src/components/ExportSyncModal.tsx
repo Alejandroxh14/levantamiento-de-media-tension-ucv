@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LevantamientoRecord } from '../types';
+import { LevantamientoRecord, isTransformacionTipo } from '../types';
 import { 
   FileSpreadsheet, 
   Share2, 
@@ -13,7 +13,9 @@ import {
   Zap, 
   AlertCircle,
   HelpCircle,
-  Code
+  Code,
+  Building2,
+  Radio
 } from 'lucide-react';
 import { exportarExcelCompleto, exportarExcelEspecifico } from '../services/excelService';
 import { 
@@ -41,7 +43,10 @@ export const ExportSyncModal: React.FC<ExportSyncModalProps> = ({
   const [showScriptCode, setShowScriptCode] = useState(false);
 
   const tanquillas = records.filter((r) => r.tipo === 'Tanquilla');
-  const transformadores = records.filter((r) => r.tipo === 'Transformador');
+  const sotanos = records.filter((r) => r.tipo === 'SÓTANO DE TRANSFORMACIÓN' || r.tipo === 'Transformador');
+  const casillas = records.filter((r) => r.tipo === 'CASILLA DE TRANSFORMACIÓN');
+  const postes = records.filter((r) => r.tipo === 'POSTE DE TRANSFORMACIÓN');
+  const transformadores = records.filter((r) => isTransformacionTipo(r.tipo));
   const scriptCode = generateGoogleAppsScriptCode();
 
   useEffect(() => {
@@ -134,26 +139,26 @@ export const ExportSyncModal: React.FC<ExportSyncModalProps> = ({
             📊
           </span>
           <div>
-            <h3 className="text-base font-bold text-slate-900">Descargar Archivo Excel (.xlsx)</h3>
+            <h3 className="text-base font-bold text-slate-900">DESCARGAR ARCHIVOS EXCEL (.xlsx)</h3>
             <p className="text-xs text-slate-500">
-              Genera un libro de Excel con formato de celdas, anchos automáticos y hojas separadas
+              Genera libros de Excel con formato técnico, anchos automáticos y hojas separadas por categoría
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
           
           {/* Opción 1: Todo Consolidado */}
           <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/40 flex flex-col justify-between space-y-3">
             <div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-emerald-800 uppercase">Libro Completo</span>
+                <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">LIBRO COMPLETO</span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 text-[11px] font-bold">
                   {records.length} reg.
                 </span>
               </div>
               <p className="text-xs text-slate-600 mt-2">
-                Incluye 5 pestañas: <em>Consolidado, Tanquillas, Transformadores, Detalle Conductores y Detalle Empalmes</em>.
+                Incluye todas las pestañas: <em>Consolidado General, Tanquillas, Sótanos, Casillas, Postes, Detalle de Conductores y Empalmes</em>.
               </p>
             </div>
 
@@ -167,11 +172,11 @@ export const ExportSyncModal: React.FC<ExportSyncModalProps> = ({
             </button>
           </div>
 
-          {/* Opción 2: Solo Tanquillas */}
+          {/* Opción 2: TANQUILLAS */}
           <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/40 flex flex-col justify-between space-y-3">
             <div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-blue-800 uppercase">Solo Tanquillas</span>
+                <span className="text-xs font-bold text-blue-800 uppercase tracking-wide">TANQUILLAS</span>
                 <span className="px-2 py-0.5 rounded-full bg-blue-200 text-blue-900 text-[11px] font-bold">
                   {tanquillas.length} reg.
                 </span>
@@ -187,31 +192,79 @@ export const ExportSyncModal: React.FC<ExportSyncModalProps> = ({
               className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold transition shadow-sm active:scale-95"
             >
               <Layers className="w-4 h-4" />
-              <span>Descargar Tanquillas</span>
+              <span>Descargar Tanquillas ({tanquillas.length})</span>
             </button>
           </div>
 
-          {/* Opción 3: Solo Transformadores */}
+          {/* Opción 3: SOTANOS DE TRANSFORMACIÓN */}
           <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/40 flex flex-col justify-between space-y-3">
             <div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-800 uppercase">Solo Transformadores</span>
+                <span className="text-xs font-bold text-amber-800 uppercase tracking-wide">SOTANOS DE TRANSFORMACIÓN</span>
                 <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[11px] font-bold">
-                  {transformadores.length} reg.
+                  {sotanos.length} reg.
                 </span>
               </div>
               <p className="text-xs text-slate-600 mt-2">
-                Exporta los transformadores con sus protecciones, conductores de MT y observaciones.
+                Exporta sótanos de transformación subterráneos con protecciones y conductores MT.
               </p>
             </div>
 
             <button
-              onClick={() => exportarExcelEspecifico('Transformador', records)}
-              disabled={transformadores.length === 0}
+              onClick={() => exportarExcelEspecifico('SÓTANO DE TRANSFORMACIÓN', records)}
+              disabled={sotanos.length === 0}
               className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold transition shadow-sm active:scale-95"
             >
               <Zap className="w-4 h-4" />
-              <span>Descargar Transformadores</span>
+              <span>Descargar Sótanos ({sotanos.length})</span>
+            </button>
+          </div>
+
+          {/* Opción 4: CASILLAS DE TRANSFORMACIÓN */}
+          <div className="p-4 rounded-xl border border-purple-200 bg-purple-50/40 flex flex-col justify-between space-y-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-purple-800 uppercase tracking-wide">CASILLAS DE TRANSFORMACIÓN</span>
+                <span className="px-2 py-0.5 rounded-full bg-purple-200 text-purple-900 text-[11px] font-bold">
+                  {casillas.length} reg.
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 mt-2">
+                Exporta casillas de transformación superficiales con aparamenta, protecciones y acometidas.
+              </p>
+            </div>
+
+            <button
+              onClick={() => exportarExcelEspecifico('CASILLA DE TRANSFORMACIÓN', records)}
+              disabled={casillas.length === 0}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-bold transition shadow-sm active:scale-95"
+            >
+              <Building2 className="w-4 h-4" />
+              <span>Descargar Casillas ({casillas.length})</span>
+            </button>
+          </div>
+
+          {/* Opción 5: POSTE DE TRANSFORMACIÓN */}
+          <div className="p-4 rounded-xl border border-sky-200 bg-sky-50/40 flex flex-col justify-between space-y-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-sky-800 uppercase tracking-wide">POSTE DE TRANSFORMACIÓN</span>
+                <span className="px-2 py-0.5 rounded-full bg-sky-200 text-sky-900 text-[11px] font-bold">
+                  {postes.length} reg.
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 mt-2">
+                Exporta postes de transformación aérea de MT con herrajes, protecciones y bajantes.
+              </p>
+            </div>
+
+            <button
+              onClick={() => exportarExcelEspecifico('POSTE DE TRANSFORMACIÓN', records)}
+              disabled={postes.length === 0}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-bold transition shadow-sm active:scale-95"
+            >
+              <Radio className="w-4 h-4" />
+              <span>Descargar Postes ({postes.length})</span>
             </button>
           </div>
 

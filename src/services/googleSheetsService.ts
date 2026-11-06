@@ -1,4 +1,4 @@
-import { LevantamientoRecord, GoogleSheetsConfig } from '../types';
+import { LevantamientoRecord, GoogleSheetsConfig, isTransformacionTipo, formatTipoDisplayName } from '../types';
 import { formatCanalesText, formatEmpalmesText, formatConductoresMTText } from './excelService';
 
 const GOOGLE_SHEETS_CONFIG_KEY = 'ucv_mt_google_sheets_config';
@@ -27,7 +27,7 @@ export function transformRecordForSheet(record: LevantamientoRecord) {
     id: record.id,
     timestamp: record.timestamp,
     fecha: record.fecha,
-    tipo: record.tipo,
+    tipo: formatTipoDisplayName(record.tipo),
     codigoIdentificador: record.codigoIdentificador,
     existeNombre: record.existeNombre,
     idPlano: record.idPlano || '',
@@ -39,9 +39,9 @@ export function transformRecordForSheet(record: LevantamientoRecord) {
     tieneAcceso: record.tieneAcceso,
     canalesDetalle: formatCanalesText(record.canales),
     empalmesDetalle: formatEmpalmesText(record.empalmes),
-    tieneProtecciones: record.tipo === 'Transformador' ? record.tieneProtecciones || 'No' : 'N/A',
+    tieneProtecciones: isTransformacionTipo(record.tipo) ? record.tieneProtecciones || 'No' : 'N/A',
     obsProtecciones: record.obsProtecciones || '',
-    conductoresMTDetalle: record.tipo === 'Transformador' ? formatConductoresMTText(record.conductoresMT) : 'N/A',
+    conductoresMTDetalle: isTransformacionTipo(record.tipo) ? formatConductoresMTText(record.conductoresMT) : 'N/A',
     observaciones: record.observaciones || '',
     numEvidencias: record.evidencias?.length || 0,
     nombresEvidencias: record.evidencias?.map((e) => e.nombre).join(', ') || 'Ninguna',

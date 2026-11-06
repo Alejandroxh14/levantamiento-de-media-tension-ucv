@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LevantamientoRecord } from './types';
+import { LevantamientoRecord, isTransformacionTipo, EstadoLevantamiento, getRecordStatus } from './types';
 import { getAllRecords, deleteRecord, saveRecord } from './services/storageService';
 import { exportarExcelCompleto } from './services/excelService';
 import { syncRecordToGoogleSheets, getGoogleSheetsConfig } from './services/googleSheetsService';
@@ -9,13 +9,14 @@ import { RecordsList } from './components/RecordsList';
 import { ExportSyncModal } from './components/ExportSyncModal';
 import { MapPointsView } from './components/MapPointsView';
 import { RecordDetailModal } from './components/RecordDetailModal';
+import { DashboardView } from './components/DashboardView';
 import { UCVLogo } from './components/UCVLogo';
 
 export default function App() {
   const [records, setRecords] = useState<LevantamientoRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<'form' | 'records' | 'export' | 'map'>('form');
-  const [inspectingRecord, setInspectingRecord] = useState<LevantamientoRecord | null>(null);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'form' | 'records' | 'export' | 'map'>('dashboard');
   const [editingRecord, setEditingRecord] = useState<LevantamientoRecord | null>(null);
+  const [inspectingRecord, setInspectingRecord] = useState<LevantamientoRecord | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -42,34 +43,51 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const handleSetActiveTab = (tab: 'form' | 'records' | 'export' | 'map') => {
-    if (tab === 'form') {
-      setEditingRecord(null);
-    }
-    setActiveTab(tab);
-  };
-
-  const handleGoToNewRecord = () => {
-    setEditingRecord(null);
-    setActiveTab('form');
-  };
-
-  const handleRecordSaved = (newRecord: LevantamientoRecord) => {
+  const handleRecordSaved = (savedRecord: LevantamientoRecord) => {
     setRecords((prev) => {
-      const idx = prev.findIndex((r) => r.id === newRecord.id);
+      const idx = prev.findIndex((r) => r.id === savedRecord.id);
       if (idx >= 0) {
         const copy = [...prev];
-        copy[idx] = newRecord;
+        copy[idx] = savedRecord;
         return copy;
       }
-      return [newRecord, ...prev];
+      return [savedRecord, ...prev];
     });
-    showToast(`Levantamiento [${newRecord.codigoIdentificador}] guardado en la base de datos.`);
+    setEditingRecord(null);
+    showToast(`Levantamiento [${savedRecord.codigoIdentificador}] guardado en la base de datos.`);
+  };
+
+  const handleEditRecord = (record: LevantamientoRecord) => {
+    setEditingRecord(record);
+    setActiveTab('form');
+    setInspectingRecord(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast(`Editando levantamiento ${record.codigoIdentificador}`);
+  };
+
+  const handleUpdateRecordStatus = async (recordId: string, newStatus: EstadoLevantamiento) => {
+    const rec = records.find((r) => r.id === recordId);
+    if (!rec) return;
+    const updated: LevantamientoRecord = {
+      ...rec,
+      status: newStatus,
+      tieneAcceso: newStatus === 'Sin acceso' ? 'No' : (rec.tieneAcceso === 'No' ? 'Si' : rec.tieneAcceso),
+      updatedAt: new Date().toISOString(),
+    };
+    await saveRecord(updated);
+    setRecords((prev) => prev.map((r) => (r.id === recordId ? updated : r)));
+    if (inspectingRecord && inspectingRecord.id === recordId) {
+      setInspectingRecord(updated);
+    }
+    showToast(`Estado de [${updated.codigoIdentificador}] actualizado a: "${newStatus}"`);
   };
 
   const handleDeleteRecord = async (id: string) => {
     const updated = await deleteRecord(id);
     setRecords(updated);
+    if (editingRecord?.id === id) {
+      setEditingRecord(null);
+    }
     showToast('Registro eliminado correctamente.');
   };
 
@@ -77,7 +95,7 @@ export default function App() {
     const config = getGoogleSheetsConfig();
     if (!config.webhookUrl) {
       setActiveTab('export');
-      showToast('Por favor, configura la URL de Google Sheets primero.');
+      showToast('Por favor configura la URL de Google Sheets primero.');
       return;
     }
 
@@ -110,7 +128,7 @@ export default function App() {
   };
 
   const tanquillasCount = records.filter((r) => r.tipo === 'Tanquilla').length;
-  const transformadoresCount = records.filter((r) => r.tipo === 'Transformador').length;
+  const transformadoresCount = records.filter((r) => isTransformacionTipo(r.tipo)).length;
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans">
@@ -118,7 +136,12 @@ export default function App() {
       {/* Top Bar Navigation */}
       <Navbar
         activeTab={activeTab}
-        setActiveTab={handleSetActiveTab}
+        setActiveTab={(tab) => {
+          if (tab !== 'form') {
+            setEditingRecord(null);
+          }
+          setActiveTab(tab);
+        }}
         totalRecords={records.length}
         tanquillasCount={tanquillasCount}
         transformadoresCount={transformadoresCount}
@@ -130,12 +153,32 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
         
         {/* Dynamic Views */}
+        {activeTab === 'dashboard' && (
+          <DashboardView
+            records={records}
+            onGoToForm={() => {
+              setEditingRecord(null);
+              setActiveTab('form');
+            }}
+            onGoToRecords={() => setActiveTab('records')}
+            onGoToMap={() => setActiveTab('map')}
+            onInspectRecord={(rec) => setInspectingRecord(rec)}
+            onQuickExcelExport={handleQuickExcelExport}
+          />
+        )}
+
         {activeTab === 'form' && (
           <LevantamientoForm
-            initialRecord={editingRecord}
             onRecordSaved={handleRecordSaved}
-            onViewRecords={() => setActiveTab('records')}
-            onCancelEdit={() => setEditingRecord(null)}
+            onViewRecords={() => {
+              setEditingRecord(null);
+              setActiveTab('records');
+            }}
+            editingRecord={editingRecord}
+            onCancelEdit={() => {
+              setEditingRecord(null);
+              setActiveTab('records');
+            }}
           />
         )}
 
@@ -144,12 +187,13 @@ export default function App() {
             records={records}
             onDeleteRecord={handleDeleteRecord}
             onInspectRecord={(rec) => setInspectingRecord(rec)}
-            onEditRecord={(rec) => {
-              setEditingRecord(rec);
+            onEditRecord={handleEditRecord}
+            onSyncGoogleSheets={handleSyncSingleRecord}
+            onUpdateStatus={handleUpdateRecordStatus}
+            onGoToForm={() => {
+              setEditingRecord(null);
               setActiveTab('form');
             }}
-            onSyncGoogleSheets={handleSyncSingleRecord}
-            onGoToForm={handleGoToNewRecord}
           />
         )}
 
@@ -164,6 +208,8 @@ export default function App() {
           <MapPointsView
             records={records}
             onInspectRecord={(rec) => setInspectingRecord(rec)}
+            onEditRecord={handleEditRecord}
+            onUpdateStatus={handleUpdateRecordStatus}
           />
         )}
 
@@ -173,7 +219,9 @@ export default function App() {
       <RecordDetailModal
         record={inspectingRecord}
         onClose={() => setInspectingRecord(null)}
+        onEditRecord={handleEditRecord}
         onSyncGoogleSheets={handleSyncSingleRecord}
+        onUpdateStatus={handleUpdateRecordStatus}
       />
 
       {/* Global Toast Notification */}
